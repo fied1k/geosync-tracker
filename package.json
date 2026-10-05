@@ -1,0 +1,32 @@
+{
+  "name": "geosync-tracker",
+  "version": "1.0.0",
+  "description": "Real-time coordinate tracker and plotter with multi-device QR sync, GPS capture, and multi-list management",
+  "main": "index.html",
+  "scripts": {
+    "release": "node scripts/release.js",
+    "release:patch": "node scripts/release.js patch",
+    "release:minor": "node scripts/release.js minor",
+    "release:major": "node scripts/release.js major"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fied1k/geosync-tracker.git"
+  },
+  "keywords": [
+    "gps",
+    "coordinates",
+    "carto",
+    "leaflet",
+    "webrtc",
+    "mqtt",
+    "surveying",
+    "mapping"
+  ],
+  "author": "fied1k",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/fied1k/geosync-tracker/issues"
+  },
+  "homepage": "https://fied1k.github.io/geosync-tracker/"
+}
