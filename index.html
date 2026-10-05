@@ -1,0 +1,1644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GeoSync - Coordinate Tracker</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  
+  <!-- QRCode.js Library for client-side QR generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  
+  <!-- MQTT.js for Zero-Config Realtime Cloud Synchronization -->
+  <script src="https://unpkg.com/mqtt@5.3.5/dist/mqtt.min.js"></script>
+
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+  
+  <!-- Inter & JetBrains Mono Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+  
+  <style>
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    .font-coord {
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: -0.02em;
+    }
+    .leaflet-popup-content-wrapper {
+      border-radius: 12px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+      padding: 2px;
+    }
+    .user-pulse-marker {
+      position: relative;
+      width: 16px;
+      height: 16px;
+      background: #2563eb;
+      border: 3px solid #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 0 10px rgba(37, 99, 235, 0.6);
+    }
+    .user-pulse-marker::after {
+      content: "";
+      position: absolute;
+      top: -8px;
+      left: -8px;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: rgba(37, 99, 235, 0.35);
+      animation: pulse 1.8s infinite ease-out;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.6); opacity: 1; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+    #qrcodeContainer img {
+      margin: 0 auto;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    }
+  </style>
+</head>
+
+<body class="bg-slate-100 text-slate-900 h-screen w-screen flex flex-col overflow-hidden select-none">
+  
+  <!-- Top Navigation Bar -->
+  <header class="h-14 bg-white border-b border-slate-200 px-4 flex items-center justify-between z-20 shrink-0">
+    <div class="flex items-center space-x-3">
+      <div class="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-200">
+        <i class="fa-solid fa-map-location-dot text-base"></i>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-sm font-bold text-slate-900 leading-none">GeoSync</h1>
+          <button id="badgeSyncHeader" title="Click for Database status & settings" class="text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded flex items-center hover:bg-emerald-100 transition">
+            <i class="fa-solid fa-circle-dot text-[8px] text-emerald-500 mr-1 animate-pulse"></i>Live Cloud Sync
+          </button>
+        </div>
+        <p class="text-[11px] text-slate-500 font-medium">CARTO Map &bull; NN.NNNN, WWW.WWWW</p>
+      </div>
+    </div>
+
+    <!-- Header Actions -->
+    <div class="flex items-center space-x-2">
+      <!-- CARTO Basemap Selector -->
+      <div class="hidden md:flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs font-medium text-slate-600">
+        <button id="bmVoyager" class="px-2.5 py-1 rounded bg-white text-blue-600 font-semibold shadow-sm transition">Voyager</button>
+        <button id="bmPositron" class="px-2.5 py-1 rounded hover:text-slate-900 transition">Light</button>
+        <button id="bmDark" class="px-2.5 py-1 rounded hover:text-slate-900 transition">Dark</button>
+      </div>
+
+      <!-- My Lists Manager Button -->
+      <button id="btnOpenLists" title="View, switch, and manage all your saved lists" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg shadow-sm transition active:scale-95">
+        <i class="fa-solid fa-folder-open text-blue-600"></i>
+        <span>My Lists</span>
+        <span id="listsBadge" class="bg-blue-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold ml-0.5">1</span>
+      </button>
+
+      <!-- Quick New List Button -->
+      <button id="btnQuickNewList" title="Start a fresh new coordinate list" class="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg shadow-sm transition active:scale-95">
+        <i class="fa-solid fa-plus text-xs"></i>
+        <span class="hidden sm:inline">New List</span>
+      </button>
+
+      <!-- Sync / QR Code Share Button -->
+      <button id="btnShare" class="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg shadow-sm transition active:scale-95">
+        <i class="fa-solid fa-qrcode text-sm"></i>
+        <span>Scan QR / Sync</span>
+      </button>
+
+      <!-- Export Button -->
+      <button id="btnExport" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-900 rounded-lg shadow-sm transition active:scale-95">
+        <i class="fa-solid fa-file-export"></i>
+        <span>Export</span>
+      </button>
+
+      <!-- Database Config Button -->
+      <button id="btnDbSettings" title="Cloud Database Settings" class="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg shadow-sm transition active:scale-95">
+        <i class="fa-solid fa-database text-xs text-blue-600"></i>
+        <span>Cloud</span>
+      </button>
+
+      <!-- Mobile drawer toggle -->
+      <button id="btnToggleList" class="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-lg">
+        <i class="fa-solid fa-bars text-base"></i>
+      </button>
+    </div>
+  </header>
+
+  <main class="flex-1 flex relative overflow-hidden">
+    
+    <!-- Sidebar: Coordinates List and Point Controls -->
+    <aside id="sidebar" class="w-full sm:w-96 bg-white border-r border-slate-200 flex flex-col z-10 absolute lg:static inset-y-0 left-0 transform -translate-x-full lg:translate-x-0 transition-transform duration-200 ease-in-out shadow-xl lg:shadow-none">
+      
+      <!-- List Title Editor & Switcher -->
+      <div class="p-4 border-b border-slate-100 bg-slate-50/50">
+        <div class="flex items-center justify-between mb-1.5">
+          <div class="flex items-center gap-1.5">
+            <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400">List Title</label>
+            <span id="currentListCodePill" class="text-[10px] font-mono text-slate-500 bg-slate-200/70 hover:bg-slate-200 px-1.5 py-0.5 rounded cursor-pointer" title="Click to copy List Code">#id</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="btnSwitchListLink" class="text-[11px] font-semibold text-blue-600 hover:underline flex items-center gap-1">
+              <i class="fa-solid fa-arrow-right-arrow-left text-[10px]"></i> Switch List
+            </button>
+            <span id="pointCounter" class="text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/70 px-2 py-0.5 rounded-full">
+              0 points
+            </span>
+          </div>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <input 
+            type="text" 
+            id="listTitleInput" 
+            value="Field Survey Points" 
+            placeholder="Name your list..." 
+            class="flex-1 text-sm font-bold text-slate-800 bg-white border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+          >
+          <button id="btnSaveTitle" title="Save title" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-semibold transition">
+            Save
+          </button>
+        </div>
+      </div>
+
+      <!-- Action Panel: Capture GPS & Quick Shortcuts -->
+      <div class="p-3 border-b border-slate-100 space-y-2">
+        <button 
+          id="btnCaptureGps" 
+          class="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-4 rounded-xl text-xs font-bold shadow-sm shadow-blue-200 transition active:scale-[0.98]"
+        >
+          <i class="fa-solid fa-location-crosshairs text-sm"></i>
+          <span>Capture Current Location</span>
+        </button>
+
+        <div class="flex items-center justify-between text-[11px] text-slate-500 px-1 pt-1">
+          <span class="flex items-center gap-1">
+            <i class="fa-solid fa-arrow-pointer text-slate-400"></i> Tap map to drop pin
+          </span>
+          <button id="btnFitBounds" class="text-blue-600 hover:underline font-medium">Fit all pins</button>
+        </div>
+      </div>
+
+      <!-- Coordinate Format Precision Notice -->
+      <div class="bg-slate-50 border-b border-slate-200/80 px-4 py-2 flex items-center justify-between text-[11px]">
+        <span class="text-slate-500 font-medium">Coordinate Format:</span>
+        <span class="font-coord text-blue-700 font-bold bg-white px-2 py-0.5 rounded border border-slate-200">
+          NN.NNNN, WWW.WWWW
+        </span>
+      </div>
+
+      <!-- Scrollable Points List -->
+      <div id="pointsListContainer" class="flex-1 overflow-y-auto p-3 space-y-2 outline-none">
+        <div id="emptyState" class="py-12 text-center text-slate-400 px-4">
+          <div class="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2">
+            <i class="fa-solid fa-map-pin text-lg"></i>
+          </div>
+          <p class="text-xs font-semibold text-slate-600">No coordinates recorded</p>
+          <p class="text-[11px] text-slate-400 mt-1">Tap "Capture Current Location" or click directly on the CARTO map.</p>
+        </div>
+      </div>
+
+      <!-- Sidebar Footer with Real-time Sync Status -->
+      <div class="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-500">
+        <div class="flex items-center gap-1.5 cursor-pointer" id="statusTrigger">
+          <span id="cloudStatusDot" class="w-2 h-2 rounded-full bg-emerald-500"></span>
+          <span id="cloudStatusLabel">Live Cloud Active</span>
+        </div>
+        <button id="btnClearAll" class="text-rose-600 hover:text-rose-700 hover:underline font-medium">
+          Clear List
+        </button>
+      </div>
+    </aside>
+
+    <!-- Leaflet Map Container -->
+    <div id="mapWrapper" class="flex-1 h-full relative">
+      <div id="map" class="w-full h-full"></div>
+
+      <!-- Quick sync prompt pill on map -->
+      <button id="btnQuickQr" class="absolute bottom-5 left-4 z-[400] flex items-center gap-2 bg-white/95 backdrop-blur hover:bg-white border border-slate-200 px-3.5 py-2 rounded-xl shadow-lg text-xs font-semibold text-slate-700 transition active:scale-95">
+        <i class="fa-solid fa-qrcode text-blue-600"></i>
+        <span>Scan to open on phone</span>
+      </button>
+
+      <!-- GPS loading spinner overlay -->
+      <div id="gpsLoadingBadge" class="hidden absolute top-4 left-1/2 -translate-x-1/2 z-[400] bg-white border border-slate-200 px-3.5 py-2 rounded-full shadow-lg text-xs font-medium text-slate-700 flex items-center gap-2">
+        <i class="fa-solid fa-circle-notch fa-spin text-blue-600"></i>
+        <span>Acquiring high-accuracy GPS...</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- My Saved Lists Manager Modal -->
+  <div id="listsModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-150">
+      
+      <!-- Modal Header -->
+      <div class="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm shadow-blue-200">
+            <i class="fa-solid fa-folder-open text-sm"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-slate-800">My Coordinate Lists</h3>
+            <p class="text-[11px] text-slate-500">Create, switch, or retrieve lists across your devices</p>
+          </div>
+        </div>
+        <button id="btnCloseListsModal" class="text-slate-400 hover:text-slate-600 p-1"><i class="fa-solid fa-xmark text-base"></i></button>
+      </div>
+
+      <!-- Quick Actions: New List & Retrieve by Code -->
+      <div class="p-4 border-b border-slate-100 space-y-3 bg-white">
+        <!-- Create New List -->
+        <div>
+          <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Create a New List</label>
+          <div class="flex items-center gap-2">
+            <input 
+              type="text" 
+              id="newListTitleInput" 
+              placeholder="e.g. Trail Markers, Site Inspection #2..." 
+              class="flex-1 text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            >
+            <button id="btnCreateNewListSubmit" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shrink-0 transition flex items-center gap-1.5 shadow-sm shadow-blue-200 active:scale-95">
+              <i class="fa-solid fa-plus"></i>
+              <span>Create</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Retrieve List by Code or Link -->
+        <div class="pt-2 border-t border-slate-100">
+          <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Retrieve List from Another Device</label>
+          <div class="flex items-center gap-2">
+            <input 
+              type="text" 
+              id="retrieveCodeInput" 
+              placeholder="Enter List Code (e.g. list_x8f3ka1) or paste link..." 
+              class="flex-1 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            >
+            <button id="btnRetrieveCodeSubmit" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold shrink-0 transition flex items-center gap-1.5 active:scale-95">
+              <i class="fa-solid fa-cloud-arrow-down"></i>
+              <span>Retrieve</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Saved Lists Container (Scrollable) -->
+      <div id="savedListsContainer" class="flex-1 overflow-y-auto p-4 space-y-2 bg-slate-50/50">
+        <!-- Populated dynamically by renderSavedListsUI() -->
+      </div>
+
+      <!-- Footer -->
+      <div class="p-3 bg-white border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+        <span id="savedListsCountNotice">1 saved list</span>
+        <button id="btnDismissListsModal" class="px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cloud Database Settings Modal -->
+  <div id="dbModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden animate-in fade-in duration-150">
+      <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+        <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+          <i class="fa-solid fa-database text-blue-600"></i>
+          Cloud Database & Sync Setup
+        </h3>
+        <button id="btnCloseDbModal" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="p-4 space-y-4">
+        <!-- Live Status Card -->
+        <div class="bg-blue-50/80 border border-blue-100 rounded-xl p-3.5 flex items-start gap-3">
+          <div class="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+            <i class="fa-solid fa-wifi text-sm"></i>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between mb-0.5">
+              <h4 class="text-xs font-bold text-blue-900">Zero-Config Live Cloud Sync</h4>
+              <span id="modalLivePill" class="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded">CONNECTED</span>
+            </div>
+            <p class="text-[11px] text-blue-700 leading-relaxed">
+              Real-time synchronization across phones, tablets, and PCs is currently <strong>active and working</strong> via global cloud WebSockets. Any device scanning the QR code receives live updates automatically.
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Current Sync Channel (List ID)</label>
+          <input type="text" id="dbListIdDisplay" readonly class="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-700 select-all">
+        </div>
+
+        <div class="border-t border-slate-100 pt-3">
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Custom Firebase Configuration (Optional)</label>
+            <span class="text-[10px] text-slate-400">Only if you want dedicated Firestore</span>
+          </div>
+          <textarea 
+            id="firebaseConfigInput" 
+            rows="4" 
+            placeholder='Paste {"apiKey": "...", "projectId": "..."} here if you want to use your own Firebase project' 
+            class="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          ></textarea>
+        </div>
+      </div>
+      <div class="p-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
+        <button id="btnResetToMqtt" class="text-xs text-blue-600 hover:underline font-semibold">Use Free Auto-Sync</button>
+        <div class="flex gap-2">
+          <button id="btnDismissDbModal" class="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-lg transition">Close</button>
+          <button id="btnSaveCustomFirebase" class="px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition">Save Custom Firebase</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit / Add Point Modal -->
+  <div id="pointModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-sm w-full overflow-hidden">
+      <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+        <h3 id="modalHeading" class="text-sm font-bold text-slate-800">Coordinate Details</h3>
+        <button id="btnCloseModal" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="p-4 space-y-3.5">
+        <div>
+          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Coordinates (NN.NNNN, WWW.WWWW)</label>
+          <div id="modalCoordDisplay" class="font-coord text-sm font-bold text-blue-600 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+            00.0000, 000.0000
+          </div>
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Point Name (Optional)</label>
+          <input 
+            type="text" 
+            id="pointNameInput" 
+            placeholder="e.g. Entrance Gate, Checkpoint #1..." 
+            class="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+          >
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Notes</label>
+          <textarea 
+            id="pointNotesInput" 
+            rows="2" 
+            placeholder="Observations or remarks..." 
+            class="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+          ></textarea>
+        </div>
+      </div>
+      <div class="p-3 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+        <button id="btnCancelModal" class="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-lg transition">Cancel</button>
+        <button id="btnSavePoint" class="px-4 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition">Save Point</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- QR Code & Device Sync Modal -->
+  <div id="shareModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-sm w-full overflow-hidden animate-in fade-in zoom-in duration-150">
+      <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+        <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+          <i class="fa-solid fa-qrcode text-blue-600"></i>
+          Scan to Open on Another Device
+        </h3>
+        <button id="btnCloseShareModal" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      
+      <div class="p-5 flex flex-col items-center text-center space-y-4">
+        <!-- Interactive QR Canvas / Box -->
+        <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-center">
+          <div id="qrcodeContainer" class="w-48 h-48 flex items-center justify-center"></div>
+        </div>
+
+        <div class="space-y-1">
+          <p class="text-xs font-bold text-slate-800">Scan with your phone's camera</p>
+          <p class="text-[11px] text-slate-500 max-w-[260px] leading-relaxed">
+            Instantly loads this exact coordinate list on mobile. Any pins captured on either device sync automatically.
+          </p>
+        </div>
+
+        <!-- Direct Share Link Field -->
+        <div class="w-full text-left">
+          <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Or Copy Direct Link</label>
+          <div class="flex items-center gap-1.5">
+            <input 
+              type="text" 
+              id="shareUrlInput" 
+              readonly 
+              class="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700 select-all focus:outline-none"
+            >
+            <button id="btnCopyShareUrl" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shrink-0 transition flex items-center gap-1 shadow-sm">
+              <i class="fa-solid fa-copy"></i>
+              <span>Copy</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="p-3 bg-slate-50 border-t border-slate-100 text-right">
+        <button id="btnDismissShare" class="px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-lg transition">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export Coordinates Modal -->
+  <div id="exportModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full overflow-hidden">
+      <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+        <h3 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+          <i class="fa-solid fa-file-export text-slate-700"></i>
+          Export Coordinates
+        </h3>
+        <button id="btnCloseExportModal" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="p-4 space-y-3">
+        <div class="flex gap-2 border-b border-slate-200 pb-2">
+          <button id="tabExpText" class="text-xs font-bold text-blue-600 border-b-2 border-blue-600 pb-1">NN.NNNN, WWW.WWWW</button>
+          <button id="tabExpCsv" class="text-xs font-semibold text-slate-500 hover:text-slate-800 pb-1">CSV</button>
+          <button id="tabExpGeoJson" class="text-xs font-semibold text-slate-500 hover:text-slate-800 pb-1">GeoJSON</button>
+        </div>
+        <textarea id="exportTextarea" rows="7" readonly class="w-full text-xs font-coord bg-slate-50 border border-slate-200 rounded-lg p-3 text-slate-800 select-all"></textarea>
+      </div>
+      <div class="p-3 bg-slate-50 border-t border-slate-100 flex justify-end">
+        <button id="btnCopyExportData" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5">
+          <i class="fa-solid fa-copy"></i>
+          <span>Copy to Clipboard</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification element -->
+  <div id="toast" class="fixed bottom-5 right-5 z-[9999] bg-slate-900 text-white text-xs px-4 py-2 rounded-xl shadow-lg flex items-center gap-2 opacity-0 pointer-events-none transition-all duration-300">
+    <i id="toastIcon" class="fa-solid fa-check text-emerald-400"></i>
+    <span id="toastMsg">Notification</span>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, deleteDoc, updateDoc, collection, onSnapshot, writeBatch, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // Application configuration
+    const CARTO_KEY = 'cb1_3ywj_2_3df8d9091c5b62104e8f7613';
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'geosync-tracker-default';
+    
+    // Check for user-provided Firebase config in localStorage or globals
+    let savedFirebaseConfig = null;
+    try {
+      const stored = localStorage.getItem('geosync_custom_firebase_config');
+      if (stored) savedFirebaseConfig = JSON.parse(stored);
+    } catch(e) {}
+
+    const customFirebaseConfig = savedFirebaseConfig || (typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null);
+    const hasRealFirebase = Boolean(customFirebaseConfig && customFirebaseConfig.apiKey && customFirebaseConfig.apiKey !== 'demo-key');
+
+    let fbApp = null;
+    let auth = null;
+    let db = null;
+    let currentUser = null;
+
+    let mqttClient = null;
+    const clientId = 'device_' + Math.random().toString(36).substring(2, 9);
+
+    let map = null;
+    let currentTileLayer = null;
+    let userMarker = null;
+    const markersMap = new Map();
+
+    let points = [];
+    let currentListId = '';
+    let currentListTitle = 'Field Survey Points';
+    let editingPointId = null;
+    let pendingCoords = null;
+    let exportTab = 'text';
+    let qrCodeInstance = null;
+
+    // Strict 4-decimal coordinate format helper: NN.NNNN, WWW.WWWW
+    function formatCoord4(lat, lng) {
+      if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) {
+        return "00.0000, 000.0000";
+      }
+      return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    }
+
+    // CARTO Basemaps with API Key
+    const cartoTiles = {
+      voyager: `https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${CARTO_KEY}`,
+      positron: `https://basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}{r}.png?key=${CARTO_KEY}`,
+      dark: `https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_KEY}`
+    };
+
+    function setupMap() {
+      map = L.map('map', {
+        zoomControl: true,
+        attributionControl: false
+      }).setView([37.7749, -122.4194], 12);
+
+      currentTileLayer = L.tileLayer(cartoTiles.voyager, {
+        maxZoom: 19,
+        subdomains: 'abcd'
+      }).addTo(map);
+
+      L.control.attribution({ position: 'bottomright' })
+        .addAttribution('&copy; <a href="https://carto.com/" target="_blank">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>')
+        .addTo(map);
+
+      // Manual click to drop coordinate pin
+      map.on('click', (e) => {
+        const { lat, lng } = e.latlng;
+        openPointModal(lat, lng, null);
+      });
+    }
+
+    function setBasemap(styleName) {
+      if (!map || !cartoTiles[styleName]) return;
+      if (currentTileLayer) map.removeLayer(currentTileLayer);
+      currentTileLayer = L.tileLayer(cartoTiles[styleName], {
+        maxZoom: 19,
+        subdomains: 'abcd'
+      }).addTo(map);
+
+      const btns = {
+        voyager: document.getElementById('bmVoyager'),
+        positron: document.getElementById('bmPositron'),
+        dark: document.getElementById('bmDark')
+      };
+      Object.keys(btns).forEach(k => {
+        if (k === styleName) {
+          btns[k].className = "px-2.5 py-1 rounded bg-white text-blue-600 font-semibold shadow-sm transition";
+        } else {
+          btns[k].className = "px-2.5 py-1 rounded hover:text-slate-900 transition";
+        }
+      });
+    }
+
+    // Update cloud status badge and dot
+    function setCloudStatus(label, state = 'online') {
+      const dot = document.getElementById('cloudStatusDot');
+      const text = document.getElementById('cloudStatusLabel');
+      const badge = document.getElementById('badgeSyncHeader');
+      const modalPill = document.getElementById('modalLivePill');
+      if (text) text.textContent = label;
+
+      if (!dot) return;
+      dot.className = "w-2 h-2 rounded-full";
+      if (state === 'online') {
+        dot.classList.add('bg-emerald-500');
+        if (badge) {
+          badge.className = "text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded flex items-center hover:bg-emerald-100 transition";
+          badge.innerHTML = '<i class="fa-solid fa-circle-dot text-[8px] text-emerald-500 mr-1 animate-pulse"></i>Live Cloud Sync';
+        }
+        if (modalPill) {
+          modalPill.className = "text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded";
+          modalPill.textContent = "CONNECTED";
+        }
+      } else if (state === 'syncing') {
+        dot.classList.add('bg-blue-500', 'animate-pulse');
+        if (badge) {
+          badge.className = "text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded flex items-center";
+          badge.innerHTML = '<i class="fa-solid fa-arrows-rotate fa-spin text-[9px] mr-1"></i>Syncing...';
+        }
+      } else {
+        dot.classList.add('bg-slate-400');
+        if (badge) {
+          badge.className = "text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 px-1.5 py-0.5 rounded flex items-center";
+          badge.innerHTML = '<i class="fa-solid fa-cloud-slash text-[9px] mr-1"></i>Offline (Local)';
+        }
+        if (modalPill) {
+          modalPill.className = "text-[10px] font-semibold bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded";
+          modalPill.textContent = "OFFLINE";
+        }
+      }
+    }
+
+    // Zero-Config Cloud Realtime Synchronization Engine (MQTT over Secure WebSocket)
+    function setupZeroConfigCloudSync() {
+      setCloudStatus('Connecting to Cloud...', 'syncing');
+      
+      const brokerUrl = 'wss://broker.hivemq.com:8884/mqtt';
+      const rootTopic = `geosync/v2/${currentListId}`;
+
+      try {
+        mqttClient = mqtt.connect(brokerUrl, {
+          clientId: clientId,
+          clean: true,
+          reconnectPeriod: 2500,
+          connectTimeout: 8000
+        });
+
+        mqttClient.on('connect', () => {
+          setCloudStatus('Live Cloud Active', 'online');
+          // Subscribe to state and live room events
+          mqttClient.subscribe([`${rootTopic}/state`, `${rootTopic}/#`], (err) => {
+            if (!err) {
+              // Also request active peer sync in case an active session is in flight
+              mqttClient.publish(`${rootTopic}/req_sync`, JSON.stringify({ from: clientId }));
+            }
+          });
+        });
+
+        mqttClient.on('message', (topic, payload) => {
+          try {
+            const data = JSON.parse(payload.toString());
+            if (data.from === clientId) return; // Ignore own echoes
+
+            // 1. Authoritative Retained Cloud State (loads instantly for brand new users)
+            if (topic.endsWith('/state')) {
+              if (Array.isArray(data.points) && (points.length === 0 || data.updatedAt > (window.__lastLocalUpdate || 0))) {
+                points = data.points;
+                if (data.title) {
+                  currentListTitle = data.title;
+                  document.getElementById('listTitleInput').value = currentListTitle;
+                }
+                saveToLocalStorage();
+                renderPointsUI();
+                renderMapMarkers();
+              }
+            } else if (topic.endsWith('/req_sync')) {
+              // Another device joined: announce our current state
+              if (points.length > 0 || currentListTitle !== 'Field Survey Points') {
+                mqttClient.publish(`${rootTopic}/resp_sync`, JSON.stringify({
+                  from: clientId,
+                  title: currentListTitle,
+                  points: points,
+                  updatedAt: Date.now()
+                }));
+              }
+            } else if (topic.endsWith('/resp_sync')) {
+              // Received authoritative state from active peer
+              if (Array.isArray(data.points) && data.points.length >= points.length) {
+                points = data.points;
+                if (data.title) {
+                  currentListTitle = data.title;
+                  document.getElementById('listTitleInput').value = currentListTitle;
+                }
+                saveToLocalStorage();
+                renderPointsUI();
+                renderMapMarkers();
+              }
+            } else if (topic.endsWith('/add_point')) {
+              if (!points.some(p => p.id === data.point.id)) {
+                points.push(data.point);
+                saveToLocalStorage();
+                renderPointsUI();
+                renderMapMarkers();
+                showToast(`Point added: ${data.point.name || 'New point'}`, 'info');
+              }
+            } else if (topic.endsWith('/update_point')) {
+              const idx = points.findIndex(p => p.id === data.point.id);
+              if (idx >= 0) {
+                points[idx] = data.point;
+                saveToLocalStorage();
+                renderPointsUI();
+                renderMapMarkers();
+              }
+            } else if (topic.endsWith('/del_point')) {
+              points = points.filter(p => p.id !== data.id);
+              saveToLocalStorage();
+              renderPointsUI();
+              renderMapMarkers();
+              showToast("Point removed by peer", "info");
+            } else if (topic.endsWith('/clear_all')) {
+              points = [];
+              saveToLocalStorage();
+              renderPointsUI();
+              renderMapMarkers();
+              showToast("List cleared by peer", "info");
+            } else if (topic.endsWith('/title')) {
+              if (data.title) {
+                currentListTitle = data.title;
+                document.getElementById('listTitleInput').value = currentListTitle;
+                saveToLocalStorage();
+              }
+            }
+          } catch(e) {
+            console.warn("MQTT message parse notice:", e);
+          }
+        });
+
+        mqttClient.on('error', (err) => {
+          console.warn("MQTT broker connection note:", err);
+          setCloudStatus('Offline (Local)', 'offline');
+        });
+
+        mqttClient.on('offline', () => {
+          setCloudStatus('Reconnecting...', 'syncing');
+        });
+
+        mqttClient.on('reconnect', () => {
+          setCloudStatus('Reconnecting...', 'syncing');
+        });
+
+      } catch(e) {
+        console.error("Zero-config MQTT init error:", e);
+        setCloudStatus('Local Storage', 'offline');
+      }
+    }
+
+    function broadcastEvent(subtopic, data) {
+      if (mqttClient && mqttClient.connected) {
+        const topic = `geosync/v2/${currentListId}/${subtopic}`;
+        const payload = JSON.stringify({ from: clientId, ...data });
+        mqttClient.publish(topic, payload);
+
+        // Retain full dataset on cloud broker so brand-new visitors with no prior files get the points immediately
+        window.__lastLocalUpdate = Date.now();
+        const stateTopic = `geosync/v2/${currentListId}/state`;
+        const statePayload = JSON.stringify({
+          from: clientId,
+          title: currentListTitle,
+          points: points,
+          updatedAt: window.__lastLocalUpdate
+        });
+        mqttClient.publish(stateTopic, statePayload, { retain: true, qos: 1 });
+      }
+    }
+
+    async function setupFirebaseSync() {
+      try {
+        fbApp = initializeApp(customFirebaseConfig);
+        auth = getAuth(fbApp);
+        db = getFirestore(fbApp);
+
+        const cred = await signInAnonymously(auth);
+        currentUser = cred.user;
+
+        const listDoc = doc(db, 'artifacts', appId, 'public', 'data', 'lists_' + currentListId);
+        const pointsCol = collection(db, 'artifacts', appId, 'public', 'data', 'pts_' + currentListId);
+
+        onSnapshot(listDoc, (snap) => {
+          if (snap.exists() && snap.data().title) {
+            currentListTitle = snap.data().title;
+            document.getElementById('listTitleInput').value = currentListTitle;
+            saveToLocalStorage();
+          } else {
+            setDoc(listDoc, { title: currentListTitle, createdAt: Date.now() }, { merge: true }).catch(console.error);
+          }
+        });
+
+        onSnapshot(pointsCol, (snapshot) => {
+          const items = [];
+          snapshot.forEach((d) => items.push({ id: d.id, ...d.data() }));
+          items.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+          points = items;
+          setCloudStatus('Firestore Synced', 'online');
+          renderPointsUI();
+          renderMapMarkers();
+          saveToLocalStorage();
+        });
+
+      } catch (err) {
+        console.warn("Custom Firebase connection failed, falling back to Zero-Config Cloud Sync:", err);
+        setupZeroConfigCloudSync();
+      }
+    }
+
+    // Registry of all lists accessed or created on this device
+    function getSavedLists() {
+      try {
+        const raw = localStorage.getItem('geosync_all_saved_lists');
+        return raw ? JSON.parse(raw) : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function updateSavedListsRegistry() {
+      try {
+        let lists = getSavedLists();
+        const existingIdx = lists.findIndex(l => l.id === currentListId);
+        const meta = {
+          id: currentListId,
+          title: currentListTitle || 'Field Survey Points',
+          count: points.length,
+          updatedAt: Date.now()
+        };
+        if (existingIdx >= 0) {
+          lists[existingIdx] = meta;
+        } else {
+          lists.unshift(meta);
+        }
+        lists = lists.slice(0, 50); // Keep 50 most recent lists
+        localStorage.setItem('geosync_all_saved_lists', JSON.stringify(lists));
+        updateListsBadge();
+      } catch (e) {}
+    }
+
+    function updateListsBadge() {
+      const lists = getSavedLists();
+      const badge = document.getElementById('listsBadge');
+      if (badge) badge.textContent = Math.max(1, lists.length);
+      const pill = document.getElementById('currentListCodePill');
+      if (pill) pill.textContent = currentListId.replace('list_', '#');
+    }
+
+    function switchToList(targetId, newTitle = null) {
+      if (!targetId) return;
+
+      // Unsubscribe from previous MQTT room if active
+      if (mqttClient && mqttClient.connected) {
+        try {
+          mqttClient.unsubscribe(`geosync/v2/${currentListId}/#`);
+        } catch(e) {}
+      }
+
+      currentListId = targetId;
+      if (newTitle) currentListTitle = newTitle;
+
+      // Update URL search parameter
+      const url = new URL(window.location.href);
+      url.searchParams.set('list', currentListId);
+      window.history.pushState({}, '', url.toString());
+
+      // Update UI displays
+      document.getElementById('shareUrlInput').value = window.location.href;
+      document.getElementById('dbListIdDisplay').value = currentListId;
+      updateListsBadge();
+
+      // Clear map markers
+      for (const [id, marker] of markersMap.entries()) {
+        map.removeLayer(marker);
+      }
+      markersMap.clear();
+
+      points = [];
+      loadFromLocalStorage();
+
+      if (newTitle) {
+        currentListTitle = newTitle;
+        document.getElementById('listTitleInput').value = currentListTitle;
+        saveToLocalStorage();
+      }
+
+      // Re-subscribe to new MQTT room
+      if (mqttClient && mqttClient.connected) {
+        const rootTopic = `geosync/v2/${currentListId}`;
+        mqttClient.subscribe([`${rootTopic}/state`, `${rootTopic}/#`], (err) => {
+          if (!err) {
+            mqttClient.publish(`${rootTopic}/req_sync`, JSON.stringify({ from: clientId }));
+          }
+        });
+      }
+
+      updateSavedListsRegistry();
+      renderPointsUI();
+      renderMapMarkers();
+      showToast(`Active List: ${currentListTitle}`, "success");
+    }
+
+    function createNewList(customTitle = '') {
+      const newId = 'list_' + Math.random().toString(36).substring(2, 9);
+      const title = customTitle.trim() || `Field Survey #${getSavedLists().length + 1}`;
+      switchToList(newId, title);
+      broadcastEvent('title', { title: title });
+      closeListsModal();
+    }
+
+    function retrieveListByInput(inputStr) {
+      const raw = (inputStr || '').trim();
+      if (!raw) return;
+
+      let targetId = raw;
+      if (raw.includes('list=')) {
+        try {
+          const parsed = new URL(raw, window.location.origin);
+          targetId = parsed.searchParams.get('list') || raw;
+        } catch(e) {
+          const match = raw.match(/list=([a-zA-Z0-9_-]+)/);
+          if (match) targetId = match[1];
+        }
+      } else if (!raw.startsWith('list_') && raw.length <= 14) {
+        targetId = 'list_' + raw.replace('#', '');
+      }
+
+      switchToList(targetId);
+      closeListsModal();
+      showToast("Retrieving list from cloud...", "info");
+    }
+
+    function deleteSavedList(idToDelete) {
+      let lists = getSavedLists();
+      lists = lists.filter(l => l.id !== idToDelete);
+      localStorage.setItem('geosync_all_saved_lists', JSON.stringify(lists));
+      localStorage.removeItem('geosync_' + idToDelete);
+      updateListsBadge();
+      renderSavedListsUI();
+      showToast("List removed from device", "info");
+    }
+
+    function renderSavedListsUI() {
+      const container = document.getElementById('savedListsContainer');
+      const countNotice = document.getElementById('savedListsCountNotice');
+      const lists = getSavedLists();
+      
+      countNotice.textContent = `${lists.length} ${lists.length === 1 ? 'saved list' : 'saved lists'} on this device`;
+      
+      if (lists.length === 0) {
+        container.innerHTML = `
+          <div class="py-8 text-center text-slate-400">
+            <i class="fa-solid fa-folder-open text-2xl mb-1 text-slate-300"></i>
+            <p class="text-xs font-semibold text-slate-600">No saved lists yet</p>
+            <p class="text-[11px] text-slate-400 mt-0.5">Click "Create" above or start plotting on your active list.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = '';
+      lists.forEach(l => {
+        const isActive = l.id === currentListId;
+        const item = document.createElement('div');
+        item.className = `p-3 rounded-xl border transition flex items-center justify-between gap-3 ${
+          isActive 
+            ? 'bg-blue-50/70 border-blue-300 shadow-sm' 
+            : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
+        }`;
+
+        const dateStr = l.updatedAt ? new Date(l.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recently';
+
+        item.innerHTML = `
+          <div class="flex-1 min-w-0 cursor-pointer list-item-body">
+            <div class="flex items-center gap-2 mb-0.5">
+              <h4 class="text-xs font-bold text-slate-800 truncate">${escapeHtml(l.title || 'Untitled Survey')}</h4>
+              ${isActive ? '<span class="text-[9px] font-bold bg-blue-600 text-white px-1.5 py-0.2 rounded-full uppercase tracking-wider">ACTIVE</span>' : ''}
+            </div>
+            <div class="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
+              <span class="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">${escapeHtml(l.id.replace('list_', '#'))}</span>
+              <span>&bull;</span>
+              <span>${l.count || 0} ${l.count === 1 ? 'point' : 'points'}</span>
+              <span>&bull;</span>
+              <span class="text-slate-400 text-[10px]">${dateStr}</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            ${!isActive ? `<button class="btn-switch px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-lg transition active:scale-95">Open</button>` : ''}
+            <button title="Share QR" class="btn-share-qr p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"><i class="fa-solid fa-qrcode text-xs"></i></button>
+            ${!isActive ? `<button title="Remove from list" class="btn-del-list p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"><i class="fa-solid fa-trash text-xs"></i></button>` : ''}
+          </div>
+        `;
+
+        item.querySelector('.list-item-body').addEventListener('click', () => {
+          if (!isActive) {
+            switchToList(l.id);
+            closeListsModal();
+          }
+        });
+
+        const btnSwitch = item.querySelector('.btn-switch');
+        if (btnSwitch) {
+          btnSwitch.addEventListener('click', () => {
+            switchToList(l.id);
+            closeListsModal();
+          });
+        }
+
+        item.querySelector('.btn-share-qr').addEventListener('click', (e) => {
+          e.stopPropagation();
+          closeListsModal();
+          if (l.id !== currentListId) {
+            switchToList(l.id);
+          }
+          openQrShareModal();
+        });
+
+        const btnDel = item.querySelector('.btn-del-list');
+        if (btnDel) {
+          btnDel.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (confirm(`Remove "${l.title}" from your saved lists? (Data remains recoverable in cloud via ID)`)) {
+              deleteSavedList(l.id);
+            }
+          });
+        }
+
+        container.appendChild(item);
+      });
+    }
+
+    function openListsModal() {
+      renderSavedListsUI();
+      document.getElementById('listsModal').classList.remove('hidden');
+    }
+
+    function closeListsModal() {
+      document.getElementById('listsModal').classList.add('hidden');
+    }
+
+    function initSyncEngine() {
+      // Check URL search param for list ID
+      const params = new URLSearchParams(window.location.search);
+      let listId = params.get('list');
+      if (!listId) {
+        listId = 'list_' + Math.random().toString(36).substring(2, 9);
+        const url = new URL(window.location.href);
+        url.searchParams.set('list', listId);
+        window.history.replaceState({}, '', url.toString());
+      }
+
+      currentListId = listId;
+      document.getElementById('shareUrlInput').value = window.location.href;
+      document.getElementById('dbListIdDisplay').value = currentListId;
+
+      loadFromLocalStorage();
+      updateSavedListsRegistry();
+
+      if (hasRealFirebase) {
+        setupFirebaseSync();
+      } else {
+        setupZeroConfigCloudSync();
+      }
+    }
+
+    function saveToLocalStorage() {
+      try {
+        localStorage.setItem('geosync_' + currentListId, JSON.stringify({
+          title: currentListTitle,
+          points: points
+        }));
+        updateSavedListsRegistry();
+      } catch (e) {}
+    }
+
+    function loadFromLocalStorage() {
+      try {
+        const stored = localStorage.getItem('geosync_' + currentListId);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          currentListTitle = parsed.title || currentListTitle;
+          points = parsed.points || [];
+          document.getElementById('listTitleInput').value = currentListTitle;
+          renderPointsUI();
+          renderMapMarkers();
+        }
+      } catch (e) {}
+    }
+
+    function renderPointsUI() {
+      const container = document.getElementById('pointsListContainer');
+      const counter = document.getElementById('pointCounter');
+      counter.textContent = `${points.length} ${points.length === 1 ? 'point' : 'points'}`;
+
+      if (points.length === 0) {
+        container.innerHTML = `
+          <div id="emptyState" class="py-12 text-center text-slate-400 px-4">
+            <div class="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2">
+              <i class="fa-solid fa-map-pin text-lg"></i>
+            </div>
+            <p class="text-xs font-semibold text-slate-600">No coordinates recorded</p>
+            <p class="text-[11px] text-slate-400 mt-1">Tap "Capture Current Location" or click directly on the CARTO map.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = '';
+      points.forEach((pt, index) => {
+        const card = document.createElement('div');
+        card.className = "bg-white p-3 rounded-xl border border-slate-200 shadow-sm hover:border-blue-400 hover:shadow transition group flex items-start justify-between gap-2";
+
+        const label = pt.name || `Point #${index + 1}`;
+        const coordString = formatCoord4(pt.lat, pt.lng);
+
+        card.innerHTML = `
+          <div class="flex-1 min-w-0 cursor-pointer pt-card-body">
+            <div class="flex items-center gap-1.5 mb-1">
+              <span class="w-5 h-5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold flex items-center justify-center shrink-0 border border-blue-200">
+                ${index + 1}
+              </span>
+              <h4 class="text-xs font-bold text-slate-800 truncate">${escapeHtml(label)}</h4>
+            </div>
+            <div class="font-coord text-xs font-semibold text-blue-600 bg-blue-50/70 px-2 py-0.5 rounded inline-block">
+              ${coordString}
+            </div>
+            ${pt.notes ? `<p class="mt-1 text-[11px] text-slate-500 italic line-clamp-1">${escapeHtml(pt.notes)}</p>` : ''}
+          </div>
+          <div class="flex items-center space-x-1 shrink-0">
+            <button title="Focus on Map" class="btn-fly p-1.5 text-slate-400 hover:text-blue-600 rounded"><i class="fa-solid fa-location-arrow text-xs"></i></button>
+            <button title="Edit" class="btn-edit p-1.5 text-slate-400 hover:text-slate-700 rounded"><i class="fa-solid fa-pen text-xs"></i></button>
+            <button title="Delete" class="btn-del p-1.5 text-slate-400 hover:text-rose-600 rounded"><i class="fa-solid fa-trash text-xs"></i></button>
+          </div>
+        `;
+
+        card.querySelector('.pt-card-body').addEventListener('click', () => flyToPoint(pt));
+        card.querySelector('.btn-fly').addEventListener('click', () => flyToPoint(pt));
+        card.querySelector('.btn-edit').addEventListener('click', () => openPointModal(pt.lat, pt.lng, pt));
+        card.querySelector('.btn-del').addEventListener('click', () => deletePoint(pt.id));
+
+        container.appendChild(card);
+      });
+    }
+
+    function renderMapMarkers() {
+      if (!map) return;
+      const ids = new Set(points.map(p => p.id));
+      for (const [id, marker] of markersMap.entries()) {
+        if (!ids.has(id)) {
+          map.removeLayer(marker);
+          markersMap.delete(id);
+        }
+      }
+
+      points.forEach((pt, index) => {
+        const formatted = formatCoord4(pt.lat, pt.lng);
+        const name = pt.name || `Point #${index + 1}`;
+
+        const icon = L.divIcon({
+          className: 'custom-pin',
+          html: `<div style="background-color: #2563eb; color: white; width: 26px; height: 26px; border-radius: 50%; border: 2px solid white; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">${index + 1}</div>`,
+          iconSize: [26, 26],
+          iconAnchor: [13, 13]
+        });
+
+        const popupHtml = `
+          <div style="font-family: 'Inter', sans-serif;">
+            <div style="font-weight: 700; font-size: 13px; color: #0f172a; margin-bottom: 2px;">${escapeHtml(name)}</div>
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; color: #2563eb; background: #eff6ff; padding: 2px 6px; border-radius: 6px; display: inline-block;">
+              ${formatted}
+            </div>
+            ${pt.notes ? `<div style="font-size: 11px; color: #64748b; margin-top: 4px;">${escapeHtml(pt.notes)}</div>` : ''}
+          </div>
+        `;
+
+        if (markersMap.has(pt.id)) {
+          const m = markersMap.get(pt.id);
+          m.setLatLng([pt.lat, pt.lng]);
+          m.setIcon(icon);
+          m.setPopupContent(popupHtml);
+        } else {
+          const m = L.marker([pt.lat, pt.lng], { icon }).addTo(map);
+          m.bindPopup(popupHtml);
+          markersMap.set(pt.id, m);
+        }
+      });
+    }
+
+    function flyToPoint(pt) {
+      if (!map) return;
+      map.flyTo([pt.lat, pt.lng], 16, { duration: 1.2 });
+      const m = markersMap.get(pt.id);
+      if (m) setTimeout(() => m.openPopup(), 600);
+      if (window.innerWidth < 1024) {
+        document.getElementById('sidebar').classList.add('-translate-x-full');
+      }
+    }
+
+    function captureLocation() {
+      if (!navigator.geolocation) {
+        showToast("Geolocation is not supported by your browser", "error");
+        return;
+      }
+
+      const loader = document.getElementById('gpsLoadingBadge');
+      loader.classList.remove('hidden');
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          loader.classList.add('hidden');
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+
+          if (!userMarker) {
+            const userIcon = L.divIcon({
+              className: 'pulse-icon',
+              html: `<div class="user-pulse-marker"></div>`,
+              iconSize: [16, 16],
+              iconAnchor: [8, 8]
+            });
+            userMarker = L.marker([lat, lng], { icon: userIcon }).addTo(map);
+          } else {
+            userMarker.setLatLng([lat, lng]);
+          }
+
+          map.flyTo([lat, lng], 16, { duration: 1 });
+          showToast(`Location captured: ${formatCoord4(lat, lng)}`, "success");
+          openPointModal(lat, lng, null);
+        },
+        (err) => {
+          loader.classList.add('hidden');
+          showToast("Unable to acquire location (" + err.message + ")", "error");
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    }
+
+    function openPointModal(lat, lng, existingPoint = null) {
+      pendingCoords = { lat, lng };
+      editingPointId = existingPoint ? existingPoint.id : null;
+
+      const modal = document.getElementById('pointModal');
+      const heading = document.getElementById('modalHeading');
+      const display = document.getElementById('modalCoordDisplay');
+      const nameInput = document.getElementById('pointNameInput');
+      const notesInput = document.getElementById('pointNotesInput');
+
+      display.textContent = formatCoord4(lat, lng);
+
+      if (existingPoint) {
+        heading.textContent = "Edit Point";
+        nameInput.value = existingPoint.name || '';
+        notesInput.value = existingPoint.notes || '';
+      } else {
+        heading.textContent = "Save Coordinate Point";
+        nameInput.value = '';
+        notesInput.value = '';
+      }
+
+      modal.classList.remove('hidden');
+      nameInput.focus();
+    }
+
+    function closeModal() {
+      document.getElementById('pointModal').classList.add('hidden');
+      pendingCoords = null;
+      editingPointId = null;
+    }
+
+    async function savePointData() {
+      if (!pendingCoords) return;
+      const name = document.getElementById('pointNameInput').value.trim();
+      const notes = document.getElementById('pointNotesInput').value.trim();
+      const { lat, lng } = pendingCoords;
+
+      const pointObj = {
+        id: editingPointId || ('p_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6)),
+        lat: Number(lat.toFixed(6)),
+        lng: Number(lng.toFixed(6)),
+        name: name,
+        notes: notes,
+        updatedAt: Date.now()
+      };
+
+      if (editingPointId) {
+        const idx = points.findIndex(p => p.id === editingPointId);
+        if (idx >= 0) points[idx] = { ...points[idx], ...pointObj };
+      } else {
+        pointObj.createdAt = Date.now();
+        points.push(pointObj);
+      }
+
+      saveToLocalStorage();
+      renderPointsUI();
+      renderMapMarkers();
+
+      // Broadcast via Zero-Config Realtime Cloud
+      if (editingPointId) {
+        broadcastEvent('update_point', { point: pointObj });
+      } else {
+        broadcastEvent('add_point', { point: pointObj });
+      }
+
+      // If Firestore is active, update there as well
+      if (db && currentUser) {
+        try {
+          const pointDoc = doc(db, 'artifacts', appId, 'public', 'data', 'pts_' + currentListId, pointObj.id);
+          await setDoc(pointDoc, pointObj, { merge: true });
+        } catch(e) {}
+      }
+
+      showToast("Point saved & synced!", "success");
+      closeModal();
+    }
+
+    async function deletePoint(id) {
+      points = points.filter(p => p.id !== id);
+      saveToLocalStorage();
+      renderPointsUI();
+      renderMapMarkers();
+
+      broadcastEvent('del_point', { id: id });
+
+      if (db && currentUser) {
+        try {
+          const pointDoc = doc(db, 'artifacts', appId, 'public', 'data', 'pts_' + currentListId, id);
+          await deleteDoc(pointDoc);
+        } catch(e) {}
+      }
+
+      showToast("Point removed", "info");
+    }
+
+    async function saveListTitle() {
+      const val = document.getElementById('listTitleInput').value.trim() || 'Untitled List';
+      currentListTitle = val;
+      saveToLocalStorage();
+
+      broadcastEvent('title', { title: currentListTitle });
+
+      if (db && currentUser) {
+        try {
+          const listDoc = doc(db, 'artifacts', appId, 'public', 'data', 'lists_' + currentListId);
+          await setDoc(listDoc, { title: currentListTitle, updatedAt: Date.now() }, { merge: true });
+        } catch(e) {}
+      }
+
+      showToast("List title saved & synced", "success");
+    }
+
+    function openQrShareModal() {
+      const shareUrl = window.location.href;
+      document.getElementById('shareUrlInput').value = shareUrl;
+
+      const container = document.getElementById('qrcodeContainer');
+      container.innerHTML = '';
+
+      try {
+        if (typeof QRCode !== 'undefined') {
+          qrCodeInstance = new QRCode(container, {
+            text: shareUrl,
+            width: 180,
+            height: 180,
+            colorDark: "#0f172a",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.M
+          });
+        } else {
+          container.innerHTML = `<p class="text-xs text-slate-500">Generating QR code...</p>`;
+        }
+      } catch (err) {
+        console.error("QR Code Error:", err);
+      }
+
+      document.getElementById('shareModal').classList.remove('hidden');
+    }
+
+    // RFC 4180 CSV value escaping
+    function escapeCsv(val) {
+      const str = (val === null || val === undefined) ? '' : String(val);
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+
+    function renderExportData() {
+      const textarea = document.getElementById('exportTextarea');
+      const tabText = document.getElementById('tabExpText');
+      const tabCsv = document.getElementById('tabExpCsv');
+      const tabGeo = document.getElementById('tabExpGeoJson');
+
+      [tabText, tabCsv, tabGeo].forEach(t => t.className = "text-xs font-semibold text-slate-500 hover:text-slate-800 pb-1");
+
+      if (exportTab === 'text') {
+        tabText.className = "text-xs font-bold text-blue-600 border-b-2 border-blue-600 pb-1";
+        textarea.value = points.map(p => {
+          const label = p.name ? ` (${p.name})` : '';
+          return `${formatCoord4(p.lat, p.lng)}${label}`;
+        }).join('\n');
+      } else if (exportTab === 'csv') {
+        tabCsv.className = "text-xs font-bold text-blue-600 border-b-2 border-blue-600 pb-1";
+        const rows = ["Name,Formatted_Coordinates,Latitude,Longitude,Notes"];
+        points.forEach(p => {
+          rows.push(`${escapeCsv(p.name)},"${formatCoord4(p.lat, p.lng)}",${p.lat},${p.lng},${escapeCsv(p.notes)}`);
+        });
+        textarea.value = rows.join('\r\n');
+      } else if (exportTab === 'geojson') {
+        tabGeo.className = "text-xs font-bold text-blue-600 border-b-2 border-blue-600 pb-1";
+        const geojson = {
+          type: "FeatureCollection",
+          features: points.map(p => ({
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [p.lng, p.lat] },
+            properties: {
+              name: p.name || "",
+              formatted: formatCoord4(p.lat, p.lng),
+              notes: p.notes || ""
+            }
+          }))
+        };
+        textarea.value = JSON.stringify(geojson, null, 2);
+      }
+    }
+
+    // Modern Clipboard API with reliable fallback
+    async function copyClipboard(text) {
+      let copied = false;
+      if (navigator.clipboard && window.isSecureContext) {
+        try {
+          await navigator.clipboard.writeText(text);
+          copied = true;
+        } catch (e) {
+          console.warn("navigator.clipboard failed:", e);
+        }
+      }
+
+      if (!copied) {
+        try {
+          const el = document.createElement("textarea");
+          el.value = text;
+          el.setAttribute("readonly", "");
+          el.style.position = "fixed";
+          el.style.left = "-9999px";
+          el.style.top = "-9999px";
+          document.body.appendChild(el);
+          el.select();
+          copied = document.execCommand('copy');
+          document.body.removeChild(el);
+        } catch (err) {
+          console.warn("Fallback copy failed:", err);
+        }
+      }
+
+      if (copied) {
+        showToast("Copied to clipboard!", "success");
+      } else {
+        showToast("Failed to copy", "error");
+      }
+    }
+
+    function showToast(msg, type = "info") {
+      const toast = document.getElementById('toast');
+      const text = document.getElementById('toastMsg');
+      const icon = document.getElementById('toastIcon');
+
+      text.textContent = msg;
+      icon.className = type === 'success' ? "fa-solid fa-check text-emerald-400" :
+                       type === 'error' ? "fa-solid fa-circle-exclamation text-rose-400" :
+                       "fa-solid fa-circle-info text-blue-400";
+
+      toast.classList.remove('opacity-0', 'pointer-events-none');
+      setTimeout(() => toast.classList.add('opacity-0', 'pointer-events-none'), 2400);
+    }
+
+    function escapeHtml(str) {
+      return (str || '').replace(/[&<>"']/g, (m) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+      }[m]));
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      setupMap();
+      initSyncEngine();
+
+      // Basemap switchers
+      document.getElementById('bmVoyager').addEventListener('click', () => setBasemap('voyager'));
+      document.getElementById('bmPositron').addEventListener('click', () => setBasemap('positron'));
+      document.getElementById('bmDark').addEventListener('click', () => setBasemap('dark'));
+
+      // GPS Capture
+      document.getElementById('btnCaptureGps').addEventListener('click', captureLocation);
+
+      // Fit bounds
+      document.getElementById('btnFitBounds').addEventListener('click', () => {
+        if (points.length === 0) return;
+        const bounds = L.latLngBounds(points.map(p => [p.lat, p.lng]));
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+      });
+
+      // Title edit
+      document.getElementById('btnSaveTitle').addEventListener('click', saveListTitle);
+      document.getElementById('listTitleInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') saveListTitle();
+      });
+
+      // Clear all
+      document.getElementById('btnClearAll').addEventListener('click', async () => {
+        if (points.length === 0) return;
+        const confirmed = window.confirm("Are you sure you want to clear all points in this list?");
+        if (!confirmed) return;
+
+        points = [];
+        saveToLocalStorage();
+        renderPointsUI();
+        renderMapMarkers();
+
+        broadcastEvent('clear_all', {});
+
+        if (db && currentUser) {
+          try {
+            const ptsCol = collection(db, 'artifacts', appId, 'public', 'data', 'pts_' + currentListId);
+            const snap = await getDocs(ptsCol);
+            const docs = snap.docs;
+            for (let i = 0; i < docs.length; i += 450) {
+              const batch = writeBatch(db);
+              docs.slice(i, i + 450).forEach(d => batch.delete(d.ref));
+              await batch.commit();
+            }
+          } catch(e) {}
+        }
+
+        showToast("All points cleared & synced", "info");
+      });
+
+      // Mobile drawer toggle
+      document.getElementById('btnToggleList').addEventListener('click', () => {
+        document.getElementById('sidebar').classList.toggle('-translate-x-full');
+      });
+
+      // Point modal controls
+      document.getElementById('btnCloseModal').addEventListener('click', closeModal);
+      document.getElementById('btnCancelModal').addEventListener('click', closeModal);
+      document.getElementById('btnSavePoint').addEventListener('click', savePointData);
+
+      // QR Code & Share modal triggers
+      document.getElementById('btnShare').addEventListener('click', openQrShareModal);
+      document.getElementById('btnQuickQr').addEventListener('click', openQrShareModal);
+      document.getElementById('btnCloseShareModal').addEventListener('click', () => {
+        document.getElementById('shareModal').classList.add('hidden');
+      });
+      document.getElementById('btnDismissShare').addEventListener('click', () => {
+        document.getElementById('shareModal').classList.add('hidden');
+      });
+      document.getElementById('btnCopyShareUrl').addEventListener('click', () => {
+        copyClipboard(document.getElementById('shareUrlInput').value);
+      });
+
+      // Export modal
+      const exportModal = document.getElementById('exportModal');
+      document.getElementById('btnExport').addEventListener('click', () => {
+        exportTab = 'text';
+        renderExportData();
+        exportModal.classList.remove('hidden');
+      });
+      document.getElementById('btnCloseExportModal').addEventListener('click', () => exportModal.classList.add('hidden'));
+      document.getElementById('tabExpText').addEventListener('click', () => { exportTab = 'text'; renderExportData(); });
+      document.getElementById('tabExpCsv').addEventListener('click', () => { exportTab = 'csv'; renderExportData(); });
+      document.getElementById('tabExpGeoJson').addEventListener('click', () => { exportTab = 'geojson'; renderExportData(); });
+      document.getElementById('btnCopyExportData').addEventListener('click', () => {
+        copyClipboard(document.getElementById('exportTextarea').value);
+      });
+
+      // Saved Lists Manager Modal triggers & actions
+      document.getElementById('btnOpenLists').addEventListener('click', openListsModal);
+      document.getElementById('btnQuickNewList').addEventListener('click', () => createNewList());
+      document.getElementById('btnSwitchListLink').addEventListener('click', openListsModal);
+      document.getElementById('currentListCodePill').addEventListener('click', () => {
+        copyClipboard(currentListId);
+      });
+      document.getElementById('btnCloseListsModal').addEventListener('click', closeListsModal);
+      document.getElementById('btnDismissListsModal').addEventListener('click', closeListsModal);
+
+      document.getElementById('btnCreateNewListSubmit').addEventListener('click', () => {
+        const title = document.getElementById('newListTitleInput').value.trim();
+        createNewList(title);
+        document.getElementById('newListTitleInput').value = '';
+      });
+      document.getElementById('newListTitleInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          const title = document.getElementById('newListTitleInput').value.trim();
+          createNewList(title);
+          document.getElementById('newListTitleInput').value = '';
+        }
+      });
+
+      document.getElementById('btnRetrieveCodeSubmit').addEventListener('click', () => {
+        const code = document.getElementById('retrieveCodeInput').value.trim();
+        retrieveListByInput(code);
+        document.getElementById('retrieveCodeInput').value = '';
+      });
+      document.getElementById('retrieveCodeInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          const code = document.getElementById('retrieveCodeInput').value.trim();
+          retrieveListByInput(code);
+          document.getElementById('retrieveCodeInput').value = '';
+        }
+      });
+
+      // Database Settings Modal
+      const dbModal = document.getElementById('dbModal');
+      const openDbModal = () => {
+        document.getElementById('dbListIdDisplay').value = currentListId;
+        const stored = localStorage.getItem('geosync_custom_firebase_config');
+        if (stored) document.getElementById('firebaseConfigInput').value = stored;
+        dbModal.classList.remove('hidden');
+      };
+      document.getElementById('btnDbSettings').addEventListener('click', openDbModal);
+      document.getElementById('badgeSyncHeader').addEventListener('click', openDbModal);
+      document.getElementById('statusTrigger').addEventListener('click', openDbModal);
+      document.getElementById('btnCloseDbModal').addEventListener('click', () => dbModal.classList.add('hidden'));
+      document.getElementById('btnDismissDbModal').addEventListener('click', () => dbModal.classList.add('hidden'));
+
+      document.getElementById('btnSaveCustomFirebase').addEventListener('click', () => {
+        const val = document.getElementById('firebaseConfigInput').value.trim();
+        try {
+          if (val) {
+            JSON.parse(val);
+            localStorage.setItem('geosync_custom_firebase_config', val);
+            showToast("Firebase configuration saved! Reloading...", "success");
+            setTimeout(() => window.location.reload(), 1000);
+          }
+        } catch(e) {
+          showToast("Invalid JSON configuration format", "error");
+        }
+      });
+
+      document.getElementById('btnResetToMqtt').addEventListener('click', () => {
+        localStorage.removeItem('geosync_custom_firebase_config');
+        showToast("Switched to Zero-Config Cloud Sync! Reloading...", "info");
+        setTimeout(() => window.location.reload(), 800);
+      });
+
+      // Invalidate Leaflet canvas size on resize
+      window.addEventListener('resize', () => {
+        if (map) map.invalidateSize();
+      });
+    });
+  </script>
+</body>
+</html>
