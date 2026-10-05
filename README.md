@@ -1,5 +1,7 @@
 # GeoSync — Real-Time Coordinate Tracker & Plotter
 
+![Version](https://img.shields.io/badge/version-v1.1.0-blue.svg)
+
 > **Live Web Application:** [https://fied1k.github.io/geosync-tracker/](https://fied1k.github.io/geosync-tracker/)
 
 **GeoSync** is a lightweight, zero-install mapping and coordinate tracking web application designed for field surveys, location plotting, and real-time collaboration across devices. Capture your current coordinates on mobile via device GPS or tap directly on the interactive CARTO map.
@@ -51,3 +53,8 @@ All captured coordinates adhere strictly to a 4-decimal precision format (`NN.NN
 
 See [`HANDOVER.md`](HANDOVER.md) for detailed technical specifications and API handover documentation.
 Licensed under the [MIT License](LICENSE).
+
+## 📦 Latest Release
+* **Version:** [v1.1.0](https://github.com/fied1k/geosync-tracker/releases/tag/v1.1.0) (2026-10-05)
+* **Changelog:** See [CHANGELOG.md](CHANGELOG.md) for full history.
+

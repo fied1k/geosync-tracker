@@ -5,6 +5,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 <!-- RELEASE_LOG_START -->
 
+## [1.1.0] - 2026-10-05
+
+### 🚀 Features
+- feat: add automated versioning, changelog generation, and publish pipeline (`19b7181` by fied1k)
+
+### 🐛 Bug Fixes
+- fix: add .nojekyll and automated GitHub Pages deployment workflow with verification (`0d34241` by fied1k)
+
 ## [1.0.0] - 2026-10-05
 
 ### 🚀 Features

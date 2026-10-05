@@ -225,14 +225,37 @@
     <div id="mapWrapper" class="flex-1 h-full relative">
       <div id="map" class="w-full h-full"></div>
 
+      <!-- Floating Active List Info & Plot Counter Pill -->
+      <div id="mapListInfoPill" class="absolute top-4 left-4 z-[400] bg-white/95 backdrop-blur hover:bg-white border border-slate-200 px-3.5 py-2 rounded-xl shadow-lg text-xs font-semibold text-slate-800 flex items-center gap-2 cursor-pointer transition active:scale-95" title="Click to view or switch lists">
+        <span class="w-2 h-2 rounded-full bg-blue-600"></span>
+        <span id="mapListTitleBadge" class="truncate max-w-[130px] sm:max-w-[200px]">Field Survey Points</span>
+        <span id="mapPlotsCountBadge" class="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200/80 px-2 py-0.5 rounded-full">0 plots</span>
+      </div>
+
+      <!-- Floating Fit All Plots Button on Map -->
+      <button id="btnFloatingFitBounds" class="absolute top-4 right-4 z-[400] bg-white/95 backdrop-blur hover:bg-white border border-slate-200 p-2 rounded-xl shadow-md text-slate-700 hover:text-blue-600 transition active:scale-95" title="Fit all recorded plots in view">
+        <i class="fa-solid fa-expand text-sm"></i>
+      </button>
+
+      <!-- Primary Floating Action Button: Record Current Location -->
+      <button 
+        id="btnFloatingPlotGps" 
+        class="absolute bottom-6 left-1/2 -translate-x-1/2 z-[400] flex items-center gap-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white px-5 py-3 rounded-2xl shadow-xl shadow-blue-600/30 text-xs font-bold transition-all active:scale-95 border border-blue-500 cursor-pointer"
+        title="Find your GPS location and record coordinates in this list"
+      >
+        <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
+        <i class="fa-solid fa-location-crosshairs text-sm"></i>
+        <span>Record Current Location</span>
+      </button>
+
       <!-- Quick sync prompt pill on map -->
-      <button id="btnQuickQr" class="absolute bottom-5 left-4 z-[400] flex items-center gap-2 bg-white/95 backdrop-blur hover:bg-white border border-slate-200 px-3.5 py-2 rounded-xl shadow-lg text-xs font-semibold text-slate-700 transition active:scale-95">
+      <button id="btnQuickQr" class="absolute bottom-6 left-4 z-[400] hidden sm:flex items-center gap-2 bg-white/95 backdrop-blur hover:bg-white border border-slate-200 px-3 py-2 rounded-xl shadow-lg text-xs font-semibold text-slate-700 transition active:scale-95">
         <i class="fa-solid fa-qrcode text-blue-600"></i>
-        <span>Scan to open on phone</span>
+        <span>Scan QR</span>
       </button>
 
       <!-- GPS loading spinner overlay -->
-      <div id="gpsLoadingBadge" class="hidden absolute top-4 left-1/2 -translate-x-1/2 z-[400] bg-white border border-slate-200 px-3.5 py-2 rounded-full shadow-lg text-xs font-medium text-slate-700 flex items-center gap-2">
+      <div id="gpsLoadingBadge" class="hidden absolute top-4 left-1/2 -translate-x-1/2 z-[400] bg-white border border-slate-200 px-4 py-2 rounded-full shadow-xl text-xs font-semibold text-slate-700 flex items-center gap-2.5">
         <i class="fa-solid fa-circle-notch fa-spin text-blue-600"></i>
         <span>Acquiring high-accuracy GPS...</span>
       </div>
@@ -364,40 +387,69 @@
 
   <!-- Edit / Add Point Modal -->
   <div id="pointModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-sm w-full overflow-hidden">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-sm w-full overflow-hidden animate-in fade-in zoom-in duration-150">
       <div class="p-4 border-b border-slate-100 flex items-center justify-between">
-        <h3 id="modalHeading" class="text-sm font-bold text-slate-800">Coordinate Details</h3>
-        <button id="btnCloseModal" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+        <div class="flex items-center gap-2">
+          <div class="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+            <i class="fa-solid fa-map-pin text-sm"></i>
+          </div>
+          <h3 id="modalHeading" class="text-sm font-bold text-slate-800">Record Coordinates</h3>
+        </div>
+        <button id="btnCloseModal" class="text-slate-400 hover:text-slate-600 p-1"><i class="fa-solid fa-xmark text-sm"></i></button>
       </div>
       <div class="p-4 space-y-3.5">
         <div>
-          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Coordinates (NN.NNNN, WWW.WWWW)</label>
-          <div id="modalCoordDisplay" class="font-coord text-sm font-bold text-blue-600 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
-            00.0000, 000.0000
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400">Captured Coordinates</label>
+            <span id="modalPlotBadge" class="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200/80 px-2 py-0.5 rounded-full">Plot #1</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div id="modalCoordDisplay" class="flex-1 font-coord text-sm font-bold text-blue-600 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+              00.0000, 000.0000
+            </div>
+            <button id="btnCopyModalCoord" type="button" title="Copy coordinates" class="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition active:scale-95 text-xs">
+              <i class="fa-solid fa-copy"></i>
+            </button>
           </div>
         </div>
+
         <div>
-          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Point Name (Optional)</label>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400">Optional Label / Name</label>
+            <span class="text-[10px] text-slate-400 italic">Defaults to Plot #N</span>
+          </div>
           <input 
             type="text" 
             id="pointNameInput" 
-            placeholder="e.g. Entrance Gate, Checkpoint #1..." 
+            placeholder="e.g. Gate, Checkpoint, Tree A (or leave empty)..." 
             class="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
           >
+          <!-- Quick Label Preset Chips -->
+          <div class="flex flex-wrap gap-1 mt-1.5" id="labelPresetChips">
+            <button type="button" class="chip-preset text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-medium transition">Checkpoint</button>
+            <button type="button" class="chip-preset text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-medium transition">Entrance</button>
+            <button type="button" class="chip-preset text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-medium transition">Corner</button>
+            <button type="button" class="chip-preset text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-medium transition">Sample Point</button>
+            <button type="button" class="chip-preset text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-medium transition">Marker</button>
+          </div>
         </div>
+
         <div>
-          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Notes</label>
+          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Notes (Optional)</label>
           <textarea 
             id="pointNotesInput" 
             rows="2" 
-            placeholder="Observations or remarks..." 
+            placeholder="Observations, terrain, remarks..." 
             class="w-full text-xs bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
           ></textarea>
         </div>
       </div>
       <div class="p-3 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
         <button id="btnCancelModal" class="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-lg transition">Cancel</button>
-        <button id="btnSavePoint" class="px-4 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition">Save Point</button>
+        <button id="btnSavePoint" class="px-4 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm shadow-blue-200 transition active:scale-95 flex items-center gap-1.5">
+          <i class="fa-solid fa-check"></i>
+          <span>Save Plot</span>
+        </button>
       </div>
     </div>
   </div>
@@ -513,6 +565,7 @@
     let map = null;
     let currentTileLayer = null;
     let userMarker = null;
+    let plotsPolyline = null;
     const markersMap = new Map();
 
     let points = [];
@@ -1083,10 +1136,37 @@
       } catch (e) {}
     }
 
+    function calculateTotalDistanceMeters() {
+      if (points.length < 2) return 0;
+      let total = 0;
+      for (let i = 0; i < points.length - 1; i++) {
+        const p1 = L.latLng(points[i].lat, points[i].lng);
+        const p2 = L.latLng(points[i + 1].lat, points[i + 1].lng);
+        total += p1.distanceTo(p2);
+      }
+      return total;
+    }
+
+    function formatDistance(meters) {
+      if (!meters || meters <= 0) return '';
+      if (meters < 1000) return `${Math.round(meters)} m`;
+      const km = (meters / 1000).toFixed(2);
+      const mi = (meters / 1609.34).toFixed(2);
+      return `${km} km (${mi} mi)`;
+    }
+
     function renderPointsUI() {
       const container = document.getElementById('pointsListContainer');
       const counter = document.getElementById('pointCounter');
-      counter.textContent = `${points.length} ${points.length === 1 ? 'point' : 'points'}`;
+      const mapCount = document.getElementById('mapPlotsCountBadge');
+      const mapTitle = document.getElementById('mapListTitleBadge');
+
+      const distM = calculateTotalDistanceMeters();
+      const distStr = distM > 0 ? ` • ${formatDistance(distM)}` : '';
+
+      counter.textContent = `${points.length} ${points.length === 1 ? 'plot' : 'plots'}${distStr}`;
+      if (mapCount) mapCount.textContent = `${points.length} ${points.length === 1 ? 'plot' : 'plots'}`;
+      if (mapTitle) mapTitle.textContent = currentListTitle || 'Field Survey Points';
 
       if (points.length === 0) {
         container.innerHTML = `
@@ -1094,8 +1174,8 @@
             <div class="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2">
               <i class="fa-solid fa-map-pin text-lg"></i>
             </div>
-            <p class="text-xs font-semibold text-slate-600">No coordinates recorded</p>
-            <p class="text-[11px] text-slate-400 mt-1">Tap "Capture Current Location" or click directly on the CARTO map.</p>
+            <p class="text-xs font-semibold text-slate-600">No plots recorded yet</p>
+            <p class="text-[11px] text-slate-400 mt-1">Tap "Record Current Location" or click directly on the map to plot your first point.</p>
           </div>
         `;
         return;
@@ -1106,7 +1186,7 @@
         const card = document.createElement('div');
         card.className = "bg-white p-3 rounded-xl border border-slate-200 shadow-sm hover:border-blue-400 hover:shadow transition group flex items-start justify-between gap-2";
 
-        const label = pt.name || `Point #${index + 1}`;
+        const label = pt.name || `Plot #${index + 1}`;
         const coordString = formatCoord4(pt.lat, pt.lng);
 
         card.innerHTML = `
@@ -1150,7 +1230,7 @@
 
       points.forEach((pt, index) => {
         const formatted = formatCoord4(pt.lat, pt.lng);
-        const name = pt.name || `Point #${index + 1}`;
+        const name = pt.name || `Plot #${index + 1}`;
 
         const icon = L.divIcon({
           className: 'custom-pin',
@@ -1161,7 +1241,10 @@
 
         const popupHtml = `
           <div style="font-family: 'Inter', sans-serif;">
-            <div style="font-weight: 700; font-size: 13px; color: #0f172a; margin-bottom: 2px;">${escapeHtml(name)}</div>
+            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 2px;">
+              <span style="background: #2563eb; color: white; border-radius: 4px; padding: 1px 5px; font-size: 10px; font-weight: bold;">#${index + 1}</span>
+              <div style="font-weight: 700; font-size: 13px; color: #0f172a;">${escapeHtml(name)}</div>
+            </div>
             <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; color: #2563eb; background: #eff6ff; padding: 2px 6px; border-radius: 6px; display: inline-block;">
               ${formatted}
             </div>
@@ -1180,6 +1263,22 @@
           markersMap.set(pt.id, m);
         }
       });
+
+      // Connect multiple plots with a route path line
+      if (plotsPolyline) {
+        map.removeLayer(plotsPolyline);
+        plotsPolyline = null;
+      }
+      if (points.length >= 2) {
+        plotsPolyline = L.polyline(points.map(p => [p.lat, p.lng]), {
+          color: '#2563eb',
+          weight: 3,
+          opacity: 0.75,
+          dashArray: '6, 8',
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(map);
+      }
     }
 
     function flyToPoint(pt) {
@@ -1220,7 +1319,7 @@
           }
 
           map.flyTo([lat, lng], 16, { duration: 1 });
-          showToast(`Location captured: ${formatCoord4(lat, lng)}`, "success");
+          showToast(`Location found: ${formatCoord4(lat, lng)}`, "success");
           openPointModal(lat, lng, null);
         },
         (err) => {
@@ -1240,16 +1339,23 @@
       const display = document.getElementById('modalCoordDisplay');
       const nameInput = document.getElementById('pointNameInput');
       const notesInput = document.getElementById('pointNotesInput');
+      const plotBadge = document.getElementById('modalPlotBadge');
 
       display.textContent = formatCoord4(lat, lng);
 
       if (existingPoint) {
-        heading.textContent = "Edit Point";
+        const idx = points.findIndex(p => p.id === existingPoint.id);
+        const num = idx >= 0 ? idx + 1 : 1;
+        heading.textContent = `Edit Plot #${num}`;
+        if (plotBadge) plotBadge.textContent = `Plot #${num}`;
         nameInput.value = existingPoint.name || '';
         notesInput.value = existingPoint.notes || '';
       } else {
-        heading.textContent = "Save Coordinate Point";
+        const nextNum = points.length + 1;
+        heading.textContent = `Record Plot #${nextNum}`;
+        if (plotBadge) plotBadge.textContent = `Plot #${nextNum}`;
         nameInput.value = '';
+        nameInput.placeholder = `Plot #${nextNum} (or enter custom label)`;
         notesInput.value = '';
       }
 
@@ -1265,9 +1371,19 @@
 
     async function savePointData() {
       if (!pendingCoords) return;
-      const name = document.getElementById('pointNameInput').value.trim();
+      let name = document.getElementById('pointNameInput').value.trim();
       const notes = document.getElementById('pointNotesInput').value.trim();
       const { lat, lng } = pendingCoords;
+
+      // Auto-assign default plot number if label left blank
+      if (!name) {
+        if (editingPointId) {
+          const idx = points.findIndex(p => p.id === editingPointId);
+          name = `Plot #${idx >= 0 ? idx + 1 : 1}`;
+        } else {
+          name = `Plot #${points.length + 1}`;
+        }
+      }
 
       const pointObj = {
         id: editingPointId || ('p_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6)),
@@ -1305,7 +1421,7 @@
         } catch(e) {}
       }
 
-      showToast("Point saved & synced!", "success");
+      showToast(`Plot recorded: ${name}`, "success");
       closeModal();
     }
 
@@ -1598,6 +1714,49 @@
           retrieveListByInput(code);
           document.getElementById('retrieveCodeInput').value = '';
         }
+      });
+
+      // Floating Map Action Buttons
+      const btnFloating = document.getElementById('btnFloatingPlotGps');
+      if (btnFloating) btnFloating.addEventListener('click', captureLocation);
+
+      const btnFitMap = document.getElementById('btnFloatingFitBounds');
+      if (btnFitMap) {
+        btnFitMap.addEventListener('click', () => {
+          if (points.length === 0) {
+            showToast("No recorded plots to view yet", "info");
+            return;
+          }
+          const bounds = L.latLngBounds(points.map(p => [p.lat, p.lng]));
+          map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+        });
+      }
+
+      const mapPill = document.getElementById('mapListInfoPill');
+      if (mapPill) mapPill.addEventListener('click', openListsModal);
+
+      // Copy coordinates inside modal
+      const btnCopyCoord = document.getElementById('btnCopyModalCoord');
+      if (btnCopyCoord) {
+        btnCopyCoord.addEventListener('click', () => {
+          if (pendingCoords) {
+            copyClipboard(formatCoord4(pendingCoords.lat, pendingCoords.lng));
+          }
+        });
+      }
+
+      // Quick label preset chips
+      document.querySelectorAll('#labelPresetChips .chip-preset').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const input = document.getElementById('pointNameInput');
+          input.value = btn.textContent.trim();
+          input.focus();
+        });
+      });
+
+      // Press Enter in pointNameInput to save plot
+      document.getElementById('pointNameInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') savePointData();
       });
 
       // Database Settings Modal
